@@ -1,5 +1,22 @@
 import tensorflow as tf
 
+class MultiHeadAttentionWithLSTM(tf.keras.layers.Layer):
+    def __init__(self, num_heads, units):
+        super(MultiHeadAttentionWithLSTM, self).__init__()
+        self.num_heads = num_heads
+        self.units = units
+        assert units % num_heads == 0, "units must be divisible by num_heads"
+        self.depth = units // num_heads
+        
+        self.attention_heads = [AttentionWithLSTM(self.depth) for _ in range(num_heads)]
+        
+    def call(self, inputs):
+        attention_outputs = [head(inputs) for head in self.attention_heads]
+        attention_outputs = tf.stack(attention_outputs, axis=-1)  # Stack the outputs from different heads
+        attention_outputs = tf.keras.layers.Flatten()(attention_outputs)  # Flatten the stacked outputs
+        
+        return attention_outputs
+
 class AttentionWithLSTM(tf.keras.layers.Layer):
     def __init__(self, units):
         super(AttentionWithLSTM, self).__init__()
@@ -29,10 +46,34 @@ class AttentionWithLSTM(tf.keras.layers.Layer):
         context_vector = attention_weights * values
         context_vector = tf.reduce_sum(context_vector, axis=1)
         
-        return context_vector, attention_weights
+        return context_vector
+
+# Create the custom model
+def create_custom_model(input_dim, sequence_length, embedding_dim, num_heads, lstm_units):
+    input_sequence = tf.keras.layers.Input(shape=(sequence_length,))
+    
+    # Embedding layer
+    embedding_layer = tf.keras.layers.Embedding(input_dim, embedding_dim)(input_sequence)
+    
+    # Multi-head attention layer with LSTM
+    multi_head_attention_layer = MultiHeadAttentionWithLSTM(num_heads=num_heads, units=lstm_units)(embedding_layer)
+    
+    # LSTM layers on top
+    lstm_layer = tf.keras.layers.LSTM(lstm_units)(multi_head_attention_layer)
+    
+    # Output layer (customize for your specific task)
+    output = tf.keras.layers.Dense(output_dim, activation='softmax')(lstm_layer)
+    
+    model = tf.keras.models.Model(inputs=input_sequence, outputs=output)
+    return model
 
 # Example usage:
-#input_sequence = tf.keras.layers.Input(shape=(sequence_length, input_dim))
-#lstm_units = 64  # Number of units in the LSTM layer
-#attention_layer = AttentionWithLSTM(units=lstm_units)
-#context_vector, attention_weights = attention_layer(input_sequence)
+input_dim = 10000  # Vocabulary size
+sequence_length = 50
+embedding_dim = 128
+num_heads = 4
+lstm_units = 64
+output_dim = 10  # Adjust for your specific task
+
+custom_model = create_custom_model(input_dim, sequence_length, embedding_dim, num_heads, lstm_units)
+custom_model.summary()
